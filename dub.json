@@ -1,0 +1,9 @@
+{
+	"name": "github-cli",
+	"description": "A cli to call some GitHub API functions.",
+	"copyright": "Copyright © 2015, Tomáš Chaloupka",
+	"authors": ["Tomáš Chaloupka"],
+	"dependencies": {
+		"std_data_json": "~>0.17.0"
+	}
+}
