@@ -4,7 +4,7 @@ Simple console application to execute basic commands on Github API.
 
 Currently works only with repository stars.
 
-**Depends on:** [std_data_json](https://github.com/s-ludwig/std_data_json) - future replacement of std.json in phobos
+**Depends on:** [std_data_json](https://github.com/s-ludwig/std_data_json) - future replacement of std.json in [phobos](https://github.com/D-Programming-Language/phobos/) library
 
 **Status:** Early beta - will change frequently
 
