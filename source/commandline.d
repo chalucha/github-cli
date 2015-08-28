@@ -246,6 +246,9 @@ struct CommandGroup
 
 final class RepositoryStarsCommand : Command
 {
+	import std.datetime;
+	import std.format;
+
 	this()
 	{
 		this.name = "stars";
@@ -258,20 +261,22 @@ final class RepositoryStarsCommand : Command
 
 	override void prepare(scope CommandArgs args)
 	{
-		args.getopt("c", &m_count, [
-				"Prints just the repository stars count"
+		args.getopt("count", &m_count, [
+				"Prints number of stars created in defined period."
 			]);
 		args.getopt("csv", &m_csv, [
-				"Prints stars informations in CSV format",
-				"Ignored when just count is requested"
+				"Prints stars informations in CSV format."
+			]);
+		args.getopt("s", &m_addCount, [
+				"Sum stars. This means that star count won't be zeroed on interval change but continuously added to.",
+				"Usable only when count parameter is set too."
 			]);
 	}
 
 	override int execute(CommonOptions options, string[] args)
 	{
-		import std.algorithm : count, splitter;
-		import std.format;
-		import std.datetime;
+		import std.algorithm : count;
+		import stdx.data.json;
 
 		enforce(!args.empty, "Repository path not specified!");
 		enforce(args.length == 1, "Expecting just repository path argument!");
@@ -280,7 +285,7 @@ final class RepositoryStarsCommand : Command
 
 		writefln("Gettitg stars info from repository: %s", repoPath);
 
-		if (m_count)
+		if (m_count == Count.all) // simplified count for all
 		{
 			int cnt;
 			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
@@ -291,18 +296,49 @@ final class RepositoryStarsCommand : Command
 
 			writeln(cnt);
 		}
-		else
+		else if (m_count != Count.none) //count stars within defined intervals
 		{
-			struct StarInfo
-			{
-				SysTime starredAt;
-				long id;
-				string login;
-				string type;
-			}
+			int cnt;
+			SysTime prevTime;
+			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
+				(ubyte[] data)
+				{
+					auto j = parseJSONStream(cast(string)data);
+					foreach(ref entry; j.readArray)
+					{
+						SysTime currentTime;
+						entry.readObject((key)
+							{
+								switch (key)
+								{
+									case "starred_at":
+										currentTime = SysTime.fromISOExtString(entry.readString());
+										break;
+									default:
+										entry.skipValue();
+										break;
+								}
+							});
 
-			import stdx.data.json;
+						if (prevTime != SysTime.init && 
+							((m_count == Count.year && prevTime.year != currentTime.year)
+							|| (m_count == Count.month && prevTime.month != currentTime.month)
+							|| (m_count == Count.day && prevTime.day != currentTime.day)))
+						{
+							writeCount(prevTime, cnt, m_count, m_csv);
+							if (!m_addCount) cnt = 0;
+						}
+						else cnt++;
+						prevTime = currentTime;
+					}
+				},
+				INCLUDE_STARRED_AT); // to return also date time star was added
 
+			//write the last count
+			if (cnt) writeCount(prevTime, cnt, m_count, m_csv);
+		}
+		else // print some info about stars
+		{
 			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
 				(ubyte[] data)
 				{
@@ -344,20 +380,55 @@ final class RepositoryStarsCommand : Command
 							});
 
 						if (m_csv)
-							writeln(format("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString()));
+							writefln("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
 						else
-							writeln(format("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString()));
+							writefln("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
 					}
 				},
-				["Accept":"application/vnd.github.v3.star+json"]); // to return also date time star was added
+				INCLUDE_STARRED_AT); // to return also date time star was added
 		}
 
 		return 0;
 	}
 
 private:
-	bool m_count;
+	struct StarInfo
+	{
+		SysTime starredAt;
+		long id;
+		string login;
+		string type;
+	}
+
+	enum INCLUDE_STARRED_AT = ["Accept":"application/vnd.github.v3.star+json"];
+
+	enum Count {none, all, day, month, year}
+
+	void writeCount(SysTime date, int count, Count countType, bool csv)
+	{
+		string dateStr;
+		switch (countType)
+		{
+			case Count.day:
+				dateStr = format("%d/%02d/%02d", date.year, date.month, date.day);
+				break;
+			case Count.month:
+				dateStr = format("%d/%02d", date.year, date.month);
+				break;
+			case Count.year:
+				dateStr = format("%d", date.year);
+				break;
+			default:
+				assert(0, "Invalid operation");
+		}
+
+		if (csv) writefln("%s\t%d", dateStr, count);
+		else writefln("%s\t%10s", dateStr, count);
+	}
+
+	Count m_count;
 	bool m_csv;
+	bool m_addCount;
 }
 
 /**
