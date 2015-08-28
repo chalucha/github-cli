@@ -21,3 +21,5 @@ sudo: false
 
 matrix:
   exclude:
+    - d: ldc-0.15.1
+    - d: gdc-4.9.2
