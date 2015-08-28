@@ -5,5 +5,6 @@
 	"authors": ["Tomáš Chaloupka"],
 	"dependencies": {
 		"std_data_json": "~>0.17.0"
-	}
+	},
+	"libs": ["curl"],
 }
