@@ -27,7 +27,7 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  */
-module github.commandline;
+module commandline;
 
 import std.array;
 import std.exception;
