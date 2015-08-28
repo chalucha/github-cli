@@ -1,6 +1,6 @@
 github-cli
 ==========
-Simple console application to execute basic commands on Github API.
+Simple console application to execute basic commands on Github API. Mainly for reading some statistics and informations.
 
 Currently works only with repository stars.
 
