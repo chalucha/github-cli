@@ -44,3 +44,7 @@ Get basic information from all stars in CSV format:
 ```
 github-cli repository stars --csv D-Programming-Language/phobos
 ```
+Get plot with stars timeseries:
+```
+github-cli repository stars --count=month --csv -s D-Programming-Language/dmd | gnuplot -p -e "set size ratio 0.3; set xdata time; set timefmt \"%Y/%m\"; set format x \"%Y/%m\"; set xtics nomirror rotate by -45; p '-' u 1:2 w filledcurve x1 lt 1 lw 0 t ''"
+```
