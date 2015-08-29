@@ -392,51 +392,54 @@ final class RepositoryStarsCommand : CountCommand
 			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
 				(ubyte[] data)
 				{
-					auto j = parseJSONStream(cast(string)data);
-					foreach(ref entry; j.readArray)
+					if (options.format != OutputFormat.raw)
 					{
-						StarInfo star;
-						entry.readObject((key)
-							{
-								switch (key)
+						auto j = parseJSONStream(cast(string)data);
+						foreach(ref entry; j.readArray)
+						{
+							StarInfo star;
+							entry.readObject((key)
 								{
-									case "starred_at":
-										star.starredAt = SysTime.fromISOExtString(entry.readString());
-										break;
-									case "user":
-										entry.readObject((key)
-											{
-												switch (key)
+									switch (key)
+									{
+										case "starred_at":
+											star.starredAt = SysTime.fromISOExtString(entry.readString());
+											break;
+										case "user":
+											entry.readObject((key)
 												{
-													case "id":
-														star.id = cast(long)entry.readDouble();
-														break;
-													case "login":
-														star.login = entry.readString();
-														break;
-													case "type":
-														star.type = entry.readString();
-														break;
-													default:
-														entry.skipValue();
-														break;
-												}
-											});
-										break;
-									default:
-										entry.skipValue();
-										assert(0, "Unexpected key: " ~ key);
-								}
-							});
+													switch (key)
+													{
+														case "id":
+															star.id = cast(long)entry.readDouble();
+															break;
+														case "login":
+															star.login = entry.readString();
+															break;
+														case "type":
+															star.type = entry.readString();
+															break;
+														default:
+															entry.skipValue();
+															break;
+													}
+												});
+											break;
+										default:
+											entry.skipValue();
+											assert(0, "Unexpected key: " ~ key);
+									}
+								});
 
-						if (options.format == OutputFormat.csv)
-							writefln("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
-						else if (options.format == OutputFormat.text)
-							writefln("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
-						else assert(0, "Not implemented"); //TODO
+							if (options.format == OutputFormat.csv)
+								writefln("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
+							else if (options.format == OutputFormat.text)
+								writefln("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
+						}
 					}
+					else assert(0, "Not implemented"); //TODO: Implement raw output
 				},
-				INCLUDE_STARRED_AT); // to return also date time star was added
+				INCLUDE_STARRED_AT); // to return also date time when star was added
 		}
 
 		return 0;
@@ -454,7 +457,7 @@ private:
 	enum INCLUDE_STARRED_AT = ["Accept":"application/vnd.github.v3.star+json"];
 }
 
-final class RepositoryForksCommand : Command
+final class RepositoryForksCommand : CountCommand
 {
 	this()
 	{
