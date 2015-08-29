@@ -326,6 +326,48 @@ protected:
 		
 		writeln(cnt);
 	}
+
+	void countBy(string timeField)(CommonOptions options, string uri, string[string] header = null)
+	{
+		int cnt;
+		SysTime prevTime;
+		processRequest(options, uri,
+			(ubyte[] data)
+			{
+				auto j = parseJSONStream(cast(string)data);
+				foreach(ref entry; j.readArray)
+				{
+					SysTime currentTime;
+					entry.readObject((key)
+						{
+							switch (key)
+							{
+								case timeField:
+									currentTime = SysTime.fromISOExtString(entry.readString());
+									break;
+								default:
+									entry.skipValue();
+									break;
+							}
+						});
+
+					if (prevTime != SysTime.init && 
+						((m_count == Count.year && prevTime.year != currentTime.year)
+							|| (m_count == Count.month && prevTime.month != currentTime.month)
+							|| (m_count == Count.day && prevTime.day != currentTime.day)))
+					{
+						writeCount(prevTime, cnt, m_count, options.format);
+						if (!m_addCount) cnt = 0;
+					}
+					cnt++;
+					prevTime = currentTime;
+				}
+			},
+			header);
+
+		//write the last count
+		if (cnt) writeCount(prevTime, cnt, m_count, options.format);
+	}
 }
 
 final class RepositoryStarsCommand : CountCommand
@@ -357,44 +399,8 @@ final class RepositoryStarsCommand : CountCommand
 		}
 		else if (m_count != Count.none) //count stars within defined intervals
 		{
-			int cnt;
-			SysTime prevTime;
-			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
-				(ubyte[] data)
-				{
-					auto j = parseJSONStream(cast(string)data);
-					foreach(ref entry; j.readArray)
-					{
-						SysTime currentTime;
-						entry.readObject((key)
-							{
-								switch (key)
-								{
-									case "starred_at":
-										currentTime = SysTime.fromISOExtString(entry.readString());
-										break;
-									default:
-										entry.skipValue();
-										break;
-								}
-							});
-
-						if (prevTime != SysTime.init && 
-							((m_count == Count.year && prevTime.year != currentTime.year)
-							|| (m_count == Count.month && prevTime.month != currentTime.month)
-							|| (m_count == Count.day && prevTime.day != currentTime.day)))
-						{
-							writeCount(prevTime, cnt, m_count, options.format);
-							if (!m_addCount) cnt = 0;
-						}
-						cnt++;
-						prevTime = currentTime;
-					}
-				},
-				INCLUDE_STARRED_AT); // to return also date time star was added
-
-			//write the last count
-			if (cnt) writeCount(prevTime, cnt, m_count, options.format);
+			super.countBy!("starred_at")(options,
+				format("https://api.github.com/repos/%s/stargazers", repoPath), INCLUDE_STARRED_AT);
 		}
 		else // print some info about stars
 		{
@@ -493,44 +499,8 @@ final class RepositoryForksCommand : CountCommand
 		}
 		else if (m_count != Count.none) //count stars within defined intervals
 		{
-			int cnt, total;
-			SysTime prevTime;
-			processRequest(options, format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath),
-				(ubyte[] data)
-				{
-					auto j = parseJSONStream(cast(string)data);
-					foreach(ref entry; j.readArray)
-					{
-						total++;
-						SysTime currentTime;
-						entry.readObject((key)
-							{
-								switch (key)
-								{
-									case "created_at":
-										currentTime = SysTime.fromISOExtString(entry.readString());
-										break;
-									default:
-										entry.skipValue();
-										break;
-								}
-							});
-						
-						if (prevTime != SysTime.init && 
-							((m_count == Count.year && prevTime.year != currentTime.year)
-								|| (m_count == Count.month && prevTime.month != currentTime.month)
-								|| (m_count == Count.day && prevTime.day != currentTime.day)))
-						{
-							writeCount(prevTime, cnt, m_count, options.format);
-							if (!m_addCount) cnt = 0;
-						}
-						cnt++;
-						prevTime = currentTime;
-					}
-				});
-			
-			//write the last count
-			if (cnt) writeCount(prevTime, cnt, m_count, options.format);
+			super.countBy!("created_at")(options,
+				format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath));
 		}
 
 		return 0;
