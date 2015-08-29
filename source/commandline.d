@@ -314,6 +314,18 @@ protected:
 		if (of == OutputFormat.csv) writefln("%s\t%d", dateStr, count);
 		else writefln("%s\t%10s", dateStr, count);
 	}
+
+	void countAll(CommonOptions options, string uri, string lookFor)
+	{
+		int cnt;
+		processRequest(options, uri,
+			(ubyte[] data)
+			{
+				cnt += data.count(cast(ubyte[])lookFor);
+			});
+		
+		writeln(cnt);
+	}
 }
 
 final class RepositoryStarsCommand : CountCommand
@@ -341,14 +353,7 @@ final class RepositoryStarsCommand : CountCommand
 
 		if (m_count == Count.all) // simplified count for all
 		{
-			int cnt;
-			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
-				(ubyte[] data)
-				{
-					cnt += data.count(cast(ubyte[])`"login"`);
-				});
-
-			writeln(cnt);
+			super.countAll(options, format("https://api.github.com/repos/%s/stargazers", repoPath), `"login"`);
 		}
 		else if (m_count != Count.none) //count stars within defined intervals
 		{
@@ -484,14 +489,7 @@ final class RepositoryForksCommand : CountCommand
 
 		if (m_count == Count.all) // simplified count for all
 		{
-			int cnt;
-			processRequest(options, format("https://api.github.com/repos/%s/forks", repoPath),
-				(ubyte[] data)
-				{
-					cnt += data.count(cast(ubyte[])`"full_name"`);
-				});
-
-			writeln(cnt);
+			super.countAll(options, format("https://api.github.com/repos/%s/forks", repoPath), `"full_name"`);
 		}
 		else if (m_count != Count.none) //count stars within defined intervals
 		{
