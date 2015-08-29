@@ -29,12 +29,17 @@
  */
 module commandline;
 
+import std.algorithm;
 import std.array;
+import std.datetime;
 import std.exception;
+import std.format;
 import std.getopt;
 import std.stdio;
 import std.string;
 import std.variant;
+
+import stdx.data.json;
 
 CommandGroup[] getCommands()
 {
@@ -158,12 +163,14 @@ struct CommonOptions {
 	bool help;
 	string user;
 	string password;
+	OutputFormat format;
 
 	void prepare(CommandArgs args)
 	{
 		args.getopt("h|help", &help, ["Display general or command specific help"]);
 		args.getopt("u|user", &user, ["GitHub username"]);
 		args.getopt("p|password", &password, ["GitHub user password"]);
+		args.getopt("f|format", &format, ["Desired output format - one of: text, csv, raw"]);
 	}
 }
 
@@ -221,17 +228,6 @@ class CommandArgs
 	}
 }
 
-class Command
-{
-	string name;
-	string argumentsPattern;
-	string description;
-	string[] helpText;
-	
-	abstract void prepare(scope CommandArgs args);
-	abstract int execute(CommonOptions options, string[] args);
-}
-
 struct CommandGroup
 {
 	string name;
@@ -244,39 +240,93 @@ struct CommandGroup
 	}
 }
 
-final class RepositoryStarsCommand : Command
+/// Defines requested count type
+enum Count {none, all, day, month, year}
+
+/// Defines possible output formats
+enum OutputFormat
 {
-	import std.datetime;
-	import std.format;
+	text, /// pretty printed text (default)
+	csv, /// csv format with tab as a delimiter
+	raw /// raw output from GitHub API (JSON)
+}
 
-	this()
-	{
-		this.name = "stars";
-		this.argumentsPattern = "owner/repository";
-		this.description = "Gets repository stars count.";
-		this.helpText = [
-			"Gets repository stars count."
-		];
-	}
+/// Base class for all commands
+class Command
+{
+	string name;
+	string argumentsPattern;
+	string description;
+	string[] helpText;
+	
+	abstract void prepare(scope CommandArgs args);
+	abstract int execute(CommonOptions options, string[] args);
+}
 
+/// Base class for commands which can count statistics
+class CountCommand : Command
+{
 	override void prepare(scope CommandArgs args)
 	{
 		args.getopt("count", &m_count, [
-				"Prints number of stars created in defined period."
-			]);
-		args.getopt("csv", &m_csv, [
-				"Prints stars informations in CSV format."
+				"Prints statistics for defined period."
 			]);
 		args.getopt("s", &m_addCount, [
-				"Sum stars. This means that star count won't be zeroed on interval change but continuously added to.",
+				"Sum statistics to show trend. This means that count won't be zeroed on interval change but continuously added to.",
 				"Usable only when count parameter is set too."
 			]);
 	}
 
 	override int execute(CommonOptions options, string[] args)
 	{
-		import std.algorithm : count;
-		import stdx.data.json;
+		enforce(m_count == Count.none || options.format != OutputFormat.raw, 
+			"Invalid output format. Only text or csv are allowed for statistics output");
+
+		return 0;
+	}
+
+protected:
+	Count m_count;
+	bool m_addCount;
+
+	void writeCount(SysTime date, int count, Count countType, OutputFormat of)
+	{
+		string dateStr;
+		switch (countType)
+		{
+			case Count.day:
+				dateStr = format("%d/%02d/%02d", date.year, date.month, date.day);
+				break;
+			case Count.month:
+				dateStr = format("%d/%02d", date.year, date.month);
+				break;
+			case Count.year:
+				dateStr = format("%d", date.year);
+				break;
+			default:
+				assert(0, "Invalid operation");
+		}
+		
+		if (of == OutputFormat.csv) writefln("%s\t%d", dateStr, count);
+		else writefln("%s\t%10s", dateStr, count);
+	}
+}
+
+final class RepositoryStarsCommand : CountCommand
+{
+	this()
+	{
+		this.name = "stars";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository stars info.";
+		this.helpText = [
+			"Gets repository stars info."
+		];
+	}
+
+	override int execute(CommonOptions options, string[] args)
+	{
+		super.execute(options, args);
 
 		enforce(!args.empty, "Repository path not specified!");
 		enforce(args.length == 1, "Expecting just repository path argument!");
@@ -325,7 +375,7 @@ final class RepositoryStarsCommand : Command
 							|| (m_count == Count.month && prevTime.month != currentTime.month)
 							|| (m_count == Count.day && prevTime.day != currentTime.day)))
 						{
-							writeCount(prevTime, cnt, m_count, m_csv);
+							writeCount(prevTime, cnt, m_count, options.format);
 							if (!m_addCount) cnt = 0;
 						}
 						else cnt++;
@@ -335,7 +385,7 @@ final class RepositoryStarsCommand : Command
 				INCLUDE_STARRED_AT); // to return also date time star was added
 
 			//write the last count
-			if (cnt) writeCount(prevTime, cnt, m_count, m_csv);
+			if (cnt) writeCount(prevTime, cnt, m_count, options.format);
 		}
 		else // print some info about stars
 		{
@@ -379,10 +429,11 @@ final class RepositoryStarsCommand : Command
 								}
 							});
 
-						if (m_csv)
+						if (options.format == OutputFormat.csv)
 							writefln("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
-						else
+						else if (options.format == OutputFormat.text)
 							writefln("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
+						else assert(0, "Not implemented"); //TODO
 					}
 				},
 				INCLUDE_STARRED_AT); // to return also date time star was added
@@ -401,34 +452,29 @@ private:
 	}
 
 	enum INCLUDE_STARRED_AT = ["Accept":"application/vnd.github.v3.star+json"];
+}
 
-	enum Count {none, all, day, month, year}
-
-	void writeCount(SysTime date, int count, Count countType, bool csv)
+final class RepositoryForksCommand : Command
+{
+	this()
 	{
-		string dateStr;
-		switch (countType)
-		{
-			case Count.day:
-				dateStr = format("%d/%02d/%02d", date.year, date.month, date.day);
-				break;
-			case Count.month:
-				dateStr = format("%d/%02d", date.year, date.month);
-				break;
-			case Count.year:
-				dateStr = format("%d", date.year);
-				break;
-			default:
-				assert(0, "Invalid operation");
-		}
+		this.name = "forks";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository forks info.";
+		this.helpText = [
+			"Gets repository forks info."
+		];
+	}
+	
+	override int execute(CommonOptions options, string[] args)
+	{
+		super.execute(options, args);
 
-		if (csv) writefln("%s\t%d", dateStr, count);
-		else writefln("%s\t%10s", dateStr, count);
+		return 0;
 	}
 
-	Count m_count;
-	bool m_csv;
-	bool m_addCount;
+private:
+
 }
 
 /**
