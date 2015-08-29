@@ -11,7 +11,7 @@ Currently works only with repository stars.
 [![Build Status](https://travis-ci.org/chalucha/github-cli.svg?branch=master)](https://travis-ci.org/chalucha/github-cli)
 
 # How to build
-Application can be build using [dub](https://github.com/D-Programming-Language/dub)
+Application can be built using [dub](https://github.com/D-Programming-Language/dub)
 
 Use: ```dub build```
 
