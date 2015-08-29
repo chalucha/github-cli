@@ -45,7 +45,8 @@ CommandGroup[] getCommands()
 {
 	return [
 		CommandGroup("repository",
-			new RepositoryStarsCommand()
+			new RepositoryStarsCommand(),
+			new RepositoryForksCommand()
 			)
 	];
 }
@@ -188,23 +189,26 @@ class CommandArgs
 		string[] m_args;
 		Arg[] m_recognizedArgs;
 	}
-	
+
 	this(string[] args)
 	{
 		m_args = "dummy" ~ args;
 	}
-	
+
 	@property const(Arg)[] recognizedArgs() { return m_recognizedArgs; }
-	
+
 	void getopt(T)(string names, T* var, string[] help_text = null)
 	{
 		foreach (ref arg; m_recognizedArgs)
-		if (names == arg.names)
 		{
-			assert(help_text is null);
-			*var = arg.value.get!T;
-			return;
+			if (names == arg.names)
+			{
+				assert(help_text is null);
+				*var = arg.value.get!T;
+				return;
+			}
 		}
+
 		assert(help_text.length > 0);
 		Arg arg;
 		arg.defaultValue = *var;
@@ -214,12 +218,12 @@ class CommandArgs
 		arg.value = *var;
 		m_recognizedArgs ~= arg;
 	}
-	
+
 	void dropAllArgs()
 	{
 		m_args = null;
 	}
-	
+
 	string[] extractRemainingArgs()
 	{
 		auto ret = m_args[1 .. $];
@@ -232,7 +236,7 @@ struct CommandGroup
 {
 	string name;
 	Command[] commands;
-	
+
 	this(string name, Command[] commands...)
 	{
 		this.name = name;
@@ -378,7 +382,7 @@ final class RepositoryStarsCommand : CountCommand
 							writeCount(prevTime, cnt, m_count, options.format);
 							if (!m_addCount) cnt = 0;
 						}
-						else cnt++;
+						cnt++;
 						prevTime = currentTime;
 					}
 				},
@@ -472,6 +476,64 @@ final class RepositoryForksCommand : CountCommand
 	override int execute(CommonOptions options, string[] args)
 	{
 		super.execute(options, args);
+
+		enforce(!args.empty, "Repository path not specified!");
+		enforce(args.length == 1, "Expecting just repository path argument!");
+
+		string repoPath = args[0];
+
+		if (m_count == Count.all) // simplified count for all
+		{
+			int cnt;
+			processRequest(options, format("https://api.github.com/repos/%s/forks", repoPath),
+				(ubyte[] data)
+				{
+					cnt += data.count(cast(ubyte[])`"full_name"`);
+				});
+
+			writeln(cnt);
+		}
+		else if (m_count != Count.none) //count stars within defined intervals
+		{
+			int cnt, total;
+			SysTime prevTime;
+			processRequest(options, format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath),
+				(ubyte[] data)
+				{
+					auto j = parseJSONStream(cast(string)data);
+					foreach(ref entry; j.readArray)
+					{
+						total++;
+						SysTime currentTime;
+						entry.readObject((key)
+							{
+								switch (key)
+								{
+									case "created_at":
+										currentTime = SysTime.fromISOExtString(entry.readString());
+										break;
+									default:
+										entry.skipValue();
+										break;
+								}
+							});
+						
+						if (prevTime != SysTime.init && 
+							((m_count == Count.year && prevTime.year != currentTime.year)
+								|| (m_count == Count.month && prevTime.month != currentTime.month)
+								|| (m_count == Count.day && prevTime.day != currentTime.day)))
+						{
+							writeCount(prevTime, cnt, m_count, options.format);
+							if (!m_addCount) cnt = 0;
+						}
+						cnt++;
+						prevTime = currentTime;
+					}
+				});
+			
+			//write the last count
+			if (cnt) writeCount(prevTime, cnt, m_count, options.format);
+		}
 
 		return 0;
 	}
