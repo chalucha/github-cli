@@ -283,7 +283,7 @@ final class RepositoryStarsCommand : Command
 
 		string repoPath = args[0];
 
-		writefln("Gettitg stars info from repository: %s", repoPath);
+		//writefln("Gettitg stars info from repository: %s", repoPath);
 
 		if (m_count == Count.all) // simplified count for all
 		{
