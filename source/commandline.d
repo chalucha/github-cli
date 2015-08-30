@@ -46,7 +46,8 @@ CommandGroup[] getCommands()
 	return [
 		CommandGroup("repository",
 			new RepositoryStarsCommand(),
-			new RepositoryForksCommand()
+			new RepositoryForksCommand(),
+			new RepositoryCollaboratorsCommand()
 			)
 	];
 }
@@ -371,12 +372,10 @@ protected:
 }
 
 /// Templated execute override for counting commands
-mixin template ExecuteCount(C, T, alias reader) if (is(C : CountCommand))
+mixin template Execute(C, T, alias reader) if (is(C : Command))
 {
 	override int execute(CommonOptions options, string[] args)
 	{
-		super.execute(options, args);
-
 		static if (C.stringof.startsWith("Repository"))
 		{
 			enforce(!args.empty, "Repository path not specified!");
@@ -385,74 +384,82 @@ mixin template ExecuteCount(C, T, alias reader) if (is(C : CountCommand))
 			string repoPath = args[0];
 		}
 
-		if (m_count == Count.all) // simplified count for all
+		static if (is(C : CountCommand))
 		{
-			static if (is (C == RepositoryStarsCommand))
-			{
-				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
-				string lookFor = `"login"`;
-			}
-			else static if (is (C == RepositoryForksCommand))
-			{
-				string uri = format("https://api.github.com/repos/%s/forks", repoPath);
-				string lookFor = `"full_name"`;
-			}
+			super.execute(options, args);
 
-			super.countAll(options, uri, lookFor);
-		}
-		else if (m_count != Count.none) //count objects within defined intervals
-		{
-			string[string] header;
-			static if (is (C == RepositoryStarsCommand))
+			if (m_count == Count.all) // simplified count for all
 			{
-				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
-				enum string timeField = "starred_at";
-				header = ["Accept":"application/vnd.github.v3.star+json"];
-			}
-			else static if (is (C == RepositoryForksCommand))
-			{
-				string uri = format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath);
-				enum string timeField = "created_at";
-			}
-
-			super.countBy!(timeField)(options, uri, header);
-		}
-		else // print some info about counted objects
-		{
-			string[string] header;
-			static if (is (C == RepositoryStarsCommand))
-			{
-				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
-				enum string timeField = "starred_at";
-				header = ["Accept":"application/vnd.github.v3.star+json"];
-			}
-			else static if (is (C == RepositoryForksCommand))
-			{
-				string uri = format("https://api.github.com/repos/%s/forks", repoPath);
-				enum string timeField = "created_at";
-			}
-
-			processRequest(options, uri,
-				(ubyte[] data)
+				static if (is (C == RepositoryStarsCommand))
 				{
-					if (options.format != OutputFormat.raw)
-					{
-						auto j = parseJSONStream(cast(string)data);
-						foreach(ref entry; j.readArray)
-						{
-							T obj;
-							entry.readObject((key)
-								{
-									reader(key, entry, obj);
-								});
+					string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+					string lookFor = `"login"`;
+				}
+				else static if (is (C == RepositoryForksCommand))
+				{
+					string uri = format("https://api.github.com/repos/%s/forks", repoPath);
+					string lookFor = `"full_name"`;
+				}
 
-							obj.write(options);
-						}
-					}
-					else assert(0, "Not implemented"); //TODO: Implement raw output
-				},
-				header);
+				super.countAll(options, uri, lookFor);
+				return 0;
+			}
+			else if (m_count != Count.none) //count objects within defined intervals
+			{
+				string[string] header;
+				static if (is (C == RepositoryStarsCommand))
+				{
+					string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+					enum string timeField = "starred_at";
+					header = ["Accept":"application/vnd.github.v3.star+json"];
+				}
+				else static if (is (C == RepositoryForksCommand))
+				{
+					string uri = format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath);
+					enum string timeField = "created_at";
+				}
+
+				super.countBy!(timeField)(options, uri, header);
+				return 0;
+			}
 		}
+
+		// print some info about counted objects
+		string[string] header;
+		static if (is (C == RepositoryStarsCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+			header = ["Accept":"application/vnd.github.v3.star+json"];
+		}
+		else static if (is (C == RepositoryForksCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/forks", repoPath);
+		}
+		else static if (is (C == RepositoryCollaboratorsCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/collaborators", repoPath);
+		}
+
+		processRequest(options, uri,
+			(ubyte[] data)
+			{
+				if (options.format != OutputFormat.raw)
+				{
+					auto j = parseJSONStream(cast(string)data);
+					foreach(ref entry; j.readArray)
+					{
+						T obj;
+						entry.readObject((key)
+							{
+								reader(key, entry, obj);
+							});
+
+						obj.write(options);
+					}
+				}
+				else assert(0, "Not implemented"); //TODO: Implement raw output
+			},
+			header);
 
 		return 0;
 	}
@@ -470,7 +477,7 @@ final class RepositoryStarsCommand : CountCommand
 		];
 	}
 
-	mixin ExecuteCount!(RepositoryStarsCommand, StarInfo, processStar);
+	mixin Execute!(typeof(this), StarInfo, processStar);
 
 private:
 	struct StarInfo
@@ -536,7 +543,7 @@ final class RepositoryForksCommand : CountCommand
 		];
 	}
 
-	mixin ExecuteCount!(RepositoryForksCommand, ForkInfo, processFork);
+	mixin Execute!(typeof(this), ForkInfo, processFork);
 
 private:
 	struct ForkInfo
@@ -567,6 +574,57 @@ private:
 				break;
 			case "created_at":
 				fork.createdAt = SysTime.fromISOExtString(entry.readString());
+				break;
+			default:
+				entry.skipValue();
+		}
+	}
+}
+
+final class RepositoryCollaboratorsCommand : Command
+{
+	this()
+	{
+		this.name = "collaborators";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository collaborators list.";
+		this.helpText = [
+			"Gets repository collaborators list."
+		];
+	}
+
+	override void prepare(scope CommandArgs args)
+	{
+
+	}
+
+	mixin Execute!(typeof(this), CollaboratorInfo, processCollaborator);
+
+private:
+	struct CollaboratorInfo
+	{
+		long id;
+		string login;
+
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%d\t%s", id, login);
+			else if (opts.format == OutputFormat.text)
+				writefln("%10d\t%s", id, login);
+			else assert(0, "invalid output format");
+		}
+	}
+
+	void processCollaborator(E)(string key, ref E entry, ref CollaboratorInfo collaborator)
+	{
+		switch (key)
+		{
+			case "id":
+				collaborator.id = cast(long)entry.readDouble();
+				break;
+			case "login":
+				collaborator.login = entry.readString();
 				break;
 			default:
 				entry.skipValue();
