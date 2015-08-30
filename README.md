@@ -42,14 +42,14 @@ github-cli repository stars --count=month -s D-Programming-Language/phobos
 
 Get basic information from all stars in CSV format:
 ```
-github-cli repository stars --csv D-Programming-Language/phobos
+github-cli repository stars -f csv D-Programming-Language/phobos
 ```
 Get plot with stars timeseries:
 ```
-github-cli repository stars --count=month --csv -s D-Programming-Language/dmd | gnuplot -p -e "set size ratio 0.3; set xdata time; set timefmt \"%Y/%m\"; set format x \"%Y/%m\"; set xtics nomirror rotate by -45; p '-' u 1:2 w filledcurve x1 lt 1 lw 0 t ''"
+github-cli repository stars --count=month -f csv -s D-Programming-Language/dmd | gnuplot -p -e "set size ratio 0.3; set xdata time; set timefmt \"%Y/%m\"; set format x \"%Y/%m\"; set xtics nomirror rotate by -45; p '-' u 1:2 w filledcurve x1 lt 1 lw 0 t ''"
 ```
 
 Get plot with stars by year:
 ```
-github-cli repository stars --count=year --csv D-Programming-Language/dmd | gnuplot -p -e "set size ratio 0.3; set style data histogram; set style fill solid 1.0 border -1; set xtics nomirror rotate by -45; p '-' u 2:xtic(1) t ''"
+github-cli repository stars --count=year -f csv D-Programming-Language/dmd | gnuplot -p -e "set size ratio 0.3; set style data histogram; set style fill solid 1.0 border -1; set xtics nomirror rotate by -45; p '-' u 2:xtic(1) t ''"
 ```
