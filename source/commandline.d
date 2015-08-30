@@ -49,7 +49,8 @@ CommandGroup[] getCommands()
 			new RepositoryForksCommand(),
 			new RepositoryCollaboratorsCommand(),
 			new RepositoryWatchersCommand(),
-			new RepositoryReleasesCommand()
+			new RepositoryReleasesCommand(),
+			new RepositoryTagsCommand()
 			)
 	];
 }
@@ -459,6 +460,10 @@ mixin template Execute(C, T, alias reader) if (is(C : Command))
 		{
 			string uri = format("https://api.github.com/repos/%s/releases", repoPath);
 		}
+		else static if (is (C == RepositoryTagsCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/tags", repoPath);
+		}
 
 		processRequest(options, uri,
 			(ubyte[] data)
@@ -766,6 +771,68 @@ private:
 				break;
 			case "created_at":
 				release.createdAt = SysTime.fromISOExtString(entry.readString());
+				break;
+			default:
+				entry.skipValue();
+		}
+	}
+}
+
+final class RepositoryTagsCommand : Command
+{
+	this()
+	{
+		this.name = "tags";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository tags.";
+		this.helpText = [
+			"Gets repository tags."
+		];
+	}
+
+	override void prepare(scope CommandArgs args)
+	{
+
+	}
+
+	mixin Execute!(typeof(this), TagInfo, processTag);
+
+private:
+	struct TagInfo
+	{
+		string name;
+		string sha;
+
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%s\t%s", name, sha);
+			else if (opts.format == OutputFormat.text)
+				writefln("%-30s\t%s", name, sha);
+			else assert(0, "invalid output format");
+		}
+	}
+
+	void processTag(E)(string key, ref E entry, ref TagInfo tag)
+	{
+		switch (key)
+		{
+			case "name":
+				tag.name = entry.readString();
+				break;
+			case "commit":
+				entry.readObject((key)
+					{
+						switch (key)
+						{
+							case "sha":
+								tag.sha = entry.readString();
+								break;
+							default:
+								entry.skipValue();
+								break;
+						}
+					});
 				break;
 			default:
 				entry.skipValue();
