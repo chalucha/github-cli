@@ -47,7 +47,8 @@ CommandGroup[] getCommands()
 		CommandGroup("repository",
 			new RepositoryStarsCommand(),
 			new RepositoryForksCommand(),
-			new RepositoryCollaboratorsCommand()
+			new RepositoryCollaboratorsCommand(),
+			new RepositoryWatchersCommand()
 			)
 	];
 }
@@ -439,6 +440,10 @@ mixin template Execute(C, T, alias reader) if (is(C : Command))
 		{
 			string uri = format("https://api.github.com/repos/%s/collaborators", repoPath);
 		}
+		else static if (is (C == RepositoryWatchersCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/subscribers", repoPath);
+		}
 
 		processRequest(options, uri,
 			(ubyte[] data)
@@ -625,6 +630,57 @@ private:
 				break;
 			case "login":
 				collaborator.login = entry.readString();
+				break;
+			default:
+				entry.skipValue();
+		}
+	}
+}
+
+final class RepositoryWatchersCommand : Command
+{
+	this()
+	{
+		this.name = "watchers";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository watchers list.";
+		this.helpText = [
+			"Gets repository watchers list."
+		];
+	}
+
+	override void prepare(scope CommandArgs args)
+	{
+
+	}
+
+	mixin Execute!(typeof(this), WatcherInfo, processWatcher);
+
+private:
+	struct WatcherInfo
+	{
+		long id;
+		string login;
+
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%d\t%s", id, login);
+			else if (opts.format == OutputFormat.text)
+				writefln("%10d\t%s", id, login);
+			else assert(0, "invalid output format");
+		}
+	}
+
+	void processWatcher(E)(string key, ref E entry, ref WatcherInfo watcher)
+	{
+		switch (key)
+		{
+			case "id":
+				watcher.id = cast(long)entry.readDouble();
+				break;
+			case "login":
+				watcher.login = entry.readString();
 				break;
 			default:
 				entry.skipValue();
