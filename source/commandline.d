@@ -704,10 +704,19 @@ void processRequest(CommonOptions opts, string url, void delegate(ubyte[] data) 
 		else break;
 	}
 
-	//TODO: Parse error message
 	if (statusLine.code >= 400)
 	{
-		throw new Exception(format("Http error %d %s:\n%s", 
+		//Parse error message
+		auto j = parseJSONStream(cast(string)resp.data);
+		if (!j.skipToKey("message"))
+		{
+			throw new Exception(format("Http error %d %s:\n%s",
 				statusLine.code, statusLine.reason, cast(string)resp.data));
+		}
+		else
+		{
+			throw new Exception(format("Http error %d %s - %s",
+					statusLine.code, statusLine.reason, j.readString()));
+		}
 	}
 }
