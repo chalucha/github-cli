@@ -293,7 +293,7 @@ protected:
 	Count m_count;
 	bool m_addCount;
 
-	void writeCount(SysTime date, int count, Count countType, OutputFormat of)
+	final void writeCount(SysTime date, int count, Count countType, OutputFormat of)
 	{
 		string dateStr;
 		switch (countType)
@@ -315,7 +315,7 @@ protected:
 		else writefln("%s\t%10s", dateStr, count);
 	}
 
-	void countAll(CommonOptions options, string uri, string lookFor)
+	final void countAll(CommonOptions options, string uri, string lookFor)
 	{
 		int cnt;
 		processRequest(options, uri,
@@ -327,7 +327,7 @@ protected:
 		writeln(cnt);
 	}
 
-	void countBy(string timeField)(CommonOptions options, string uri, string[string] header = null)
+	final void countBy(string timeField)(CommonOptions options, string uri, string[string] header = null)
 	{
 		int cnt;
 		SysTime prevTime;
@@ -370,6 +370,94 @@ protected:
 	}
 }
 
+/// Templated execute override for counting commands
+mixin template ExecuteCount(C, T, alias reader) if (is(C : CountCommand))
+{
+	override int execute(CommonOptions options, string[] args)
+	{
+		super.execute(options, args);
+
+		static if (C.stringof.startsWith("Repository"))
+		{
+			enforce(!args.empty, "Repository path not specified!");
+			enforce(args.length == 1, "Expecting just repository path argument!");
+
+			string repoPath = args[0];
+		}
+
+		if (m_count == Count.all) // simplified count for all
+		{
+			static if (is (C == RepositoryStarsCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+				string lookFor = `"login"`;
+			}
+			else static if (is (C == RepositoryForksCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/forks", repoPath);
+				string lookFor = `"full_name"`;
+			}
+
+			super.countAll(options, uri, lookFor);
+		}
+		else if (m_count != Count.none) //count objects within defined intervals
+		{
+			string[string] header;
+			static if (is (C == RepositoryStarsCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+				enum string timeField = "starred_at";
+				header = ["Accept":"application/vnd.github.v3.star+json"];
+			}
+			else static if (is (C == RepositoryForksCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath);
+				enum string timeField = "created_at";
+			}
+
+			super.countBy!(timeField)(options, uri, header);
+		}
+		else // print some info about counted objects
+		{
+			string[string] header;
+			static if (is (C == RepositoryStarsCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/stargazers", repoPath);
+				enum string timeField = "starred_at";
+				header = ["Accept":"application/vnd.github.v3.star+json"];
+			}
+			else static if (is (C == RepositoryForksCommand))
+			{
+				string uri = format("https://api.github.com/repos/%s/forks", repoPath);
+				enum string timeField = "created_at";
+			}
+
+			processRequest(options, uri,
+				(ubyte[] data)
+				{
+					if (options.format != OutputFormat.raw)
+					{
+						auto j = parseJSONStream(cast(string)data);
+						foreach(ref entry; j.readArray)
+						{
+							T obj;
+							entry.readObject((key)
+								{
+									reader(key, entry, obj);
+								});
+
+							obj.write(options);
+						}
+					}
+					else assert(0, "Not implemented"); //TODO: Implement raw output
+				},
+				header);
+		}
+
+		return 0;
+	}
+}
+
 final class RepositoryStarsCommand : CountCommand
 {
 	this()
@@ -382,83 +470,7 @@ final class RepositoryStarsCommand : CountCommand
 		];
 	}
 
-	override int execute(CommonOptions options, string[] args)
-	{
-		super.execute(options, args);
-
-		enforce(!args.empty, "Repository path not specified!");
-		enforce(args.length == 1, "Expecting just repository path argument!");
-
-		string repoPath = args[0];
-
-		//writefln("Gettitg stars info from repository: %s", repoPath);
-
-		if (m_count == Count.all) // simplified count for all
-		{
-			super.countAll(options, format("https://api.github.com/repos/%s/stargazers", repoPath), `"login"`);
-		}
-		else if (m_count != Count.none) //count stars within defined intervals
-		{
-			super.countBy!("starred_at")(options,
-				format("https://api.github.com/repos/%s/stargazers", repoPath), INCLUDE_STARRED_AT);
-		}
-		else // print some info about stars
-		{
-			processRequest(options, format("https://api.github.com/repos/%s/stargazers", repoPath),
-				(ubyte[] data)
-				{
-					if (options.format != OutputFormat.raw)
-					{
-						auto j = parseJSONStream(cast(string)data);
-						foreach(ref entry; j.readArray)
-						{
-							StarInfo star;
-							entry.readObject((key)
-								{
-									switch (key)
-									{
-										case "starred_at":
-											star.starredAt = SysTime.fromISOExtString(entry.readString());
-											break;
-										case "user":
-											entry.readObject((key)
-												{
-													switch (key)
-													{
-														case "id":
-															star.id = cast(long)entry.readDouble();
-															break;
-														case "login":
-															star.login = entry.readString();
-															break;
-														case "type":
-															star.type = entry.readString();
-															break;
-														default:
-															entry.skipValue();
-															break;
-													}
-												});
-											break;
-										default:
-											entry.skipValue();
-											assert(0, "Unexpected key: " ~ key);
-									}
-								});
-
-							if (options.format == OutputFormat.csv)
-								writefln("%d\t%s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
-							else if (options.format == OutputFormat.text)
-								writefln("%10d\t%-40s\t%s\t%s", star.id, star.login, star.type, star.starredAt.toISOExtString());
-						}
-					}
-					else assert(0, "Not implemented"); //TODO: Implement raw output
-				},
-				INCLUDE_STARRED_AT); // to return also date time when star was added
-		}
-
-		return 0;
-	}
+	mixin ExecuteCount!(RepositoryStarsCommand, StarInfo, processStar);
 
 private:
 	struct StarInfo
@@ -467,9 +479,49 @@ private:
 		long id;
 		string login;
 		string type;
+
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%d\t%s\t%s\t%s", id, login, type, starredAt.toISOExtString());
+			else if (opts.format == OutputFormat.text)
+				writefln("%10d\t%-40s\t%s\t%s", id, login, type, starredAt.toISOExtString());
+			else assert(0, "invalid output format");
+		}
 	}
 
-	enum INCLUDE_STARRED_AT = ["Accept":"application/vnd.github.v3.star+json"];
+	void processStar(E)(string key, ref E entry, ref StarInfo star)
+	{
+		switch (key)
+		{
+			case "starred_at":
+				star.starredAt = SysTime.fromISOExtString(entry.readString());
+				break;
+			case "user":
+				entry.readObject((key)
+					{
+						switch (key)
+						{
+							case "id":
+								star.id = cast(long)entry.readDouble();
+								break;
+							case "login":
+								star.login = entry.readString();
+								break;
+							case "type":
+								star.type = entry.readString();
+								break;
+							default:
+								entry.skipValue();
+								break;
+						}
+					});
+				break;
+			default:
+				entry.skipValue();
+				assert(0, "Unexpected key: " ~ key);
+		}
+	}
 }
 
 final class RepositoryForksCommand : CountCommand
@@ -483,31 +535,43 @@ final class RepositoryForksCommand : CountCommand
 			"Gets repository forks info."
 		];
 	}
-	
-	override int execute(CommonOptions options, string[] args)
-	{
-		super.execute(options, args);
 
-		enforce(!args.empty, "Repository path not specified!");
-		enforce(args.length == 1, "Expecting just repository path argument!");
-
-		string repoPath = args[0];
-
-		if (m_count == Count.all) // simplified count for all
-		{
-			super.countAll(options, format("https://api.github.com/repos/%s/forks", repoPath), `"full_name"`);
-		}
-		else if (m_count != Count.none) //count stars within defined intervals
-		{
-			super.countBy!("created_at")(options,
-				format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath));
-		}
-
-		return 0;
-	}
+	mixin ExecuteCount!(RepositoryForksCommand, ForkInfo, processFork);
 
 private:
+	struct ForkInfo
+	{
+		long id;
+		string fullName;
+		SysTime createdAt;
 
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%d\t%s\t%s", id, fullName, createdAt.toISOExtString());
+			else if (opts.format == OutputFormat.text)
+				writefln("%10d\t%-40s\t%s", id, fullName, createdAt.toISOExtString());
+			else assert(0, "invalid output format");
+		}
+	}
+
+	void processFork(E)(string key, ref E entry, ref ForkInfo fork)
+	{
+		switch (key)
+		{
+			case "id":
+				fork.id = cast(long)entry.readDouble();
+				break;
+			case "full_name":
+				fork.fullName = entry.readString();
+				break;
+			case "created_at":
+				fork.createdAt = SysTime.fromISOExtString(entry.readString());
+				break;
+			default:
+				entry.skipValue();
+		}
+	}
 }
 
 /**
