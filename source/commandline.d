@@ -48,7 +48,8 @@ CommandGroup[] getCommands()
 			new RepositoryStarsCommand(),
 			new RepositoryForksCommand(),
 			new RepositoryCollaboratorsCommand(),
-			new RepositoryWatchersCommand()
+			new RepositoryWatchersCommand(),
+			new RepositoryReleasesCommand()
 			)
 	];
 }
@@ -401,6 +402,11 @@ mixin template Execute(C, T, alias reader) if (is(C : Command))
 					string uri = format("https://api.github.com/repos/%s/forks", repoPath);
 					string lookFor = `"full_name"`;
 				}
+				else static if (is (C == RepositoryReleasesCommand))
+				{
+					string uri = format("https://api.github.com/repos/%s/releases", repoPath);
+					string lookFor = `"tag_name"`;
+				}
 
 				super.countAll(options, uri, lookFor);
 				return 0;
@@ -417,6 +423,11 @@ mixin template Execute(C, T, alias reader) if (is(C : Command))
 				else static if (is (C == RepositoryForksCommand))
 				{
 					string uri = format("https://api.github.com/repos/%s/forks?sort=oldest", repoPath);
+					enum string timeField = "created_at";
+				}
+				else static if (is (C == RepositoryReleasesCommand))
+				{
+					string uri = format("https://api.github.com/repos/%s/releases", repoPath);
 					enum string timeField = "created_at";
 				}
 
@@ -443,6 +454,10 @@ mixin template Execute(C, T, alias reader) if (is(C : Command))
 		else static if (is (C == RepositoryWatchersCommand))
 		{
 			string uri = format("https://api.github.com/repos/%s/subscribers", repoPath);
+		}
+		else static if (is (C == RepositoryReleasesCommand))
+		{
+			string uri = format("https://api.github.com/repos/%s/releases", repoPath);
 		}
 
 		processRequest(options, uri,
@@ -681,6 +696,76 @@ private:
 				break;
 			case "login":
 				watcher.login = entry.readString();
+				break;
+			default:
+				entry.skipValue();
+		}
+	}
+}
+
+final class RepositoryReleasesCommand : CountCommand
+{
+	this()
+	{
+		this.name = "releases";
+		this.argumentsPattern = "owner/repository";
+		this.description = "Gets repository releases.";
+		this.helpText = [
+			"Gets repository releases."
+			"This returns a list of releases, which does not include regular Git tags that have not been associated with a release.",
+			"To get a list of Git tags, use the repository tags command."
+		];
+	}
+
+	mixin Execute!(typeof(this), ReleaseInfo, processRelease);
+
+private:
+	struct ReleaseInfo
+	{
+		long id;
+		string name;
+		string targetCommitish;
+		bool draft;
+		bool prerelease;
+		string description;
+		SysTime createdAt;
+
+		void write(CommonOptions opts)
+		{
+			if (opts.format == OutputFormat.csv)
+				writefln("%d\t%s\t%s\t%s\t%s\t%s\t%s",
+					id, name, targetCommitish, draft, prerelease, createdAt.toISOExtString(), description);
+			else if (opts.format == OutputFormat.text)
+				writefln("%10d\t%-10s\t%s\t%s\t%s\t%s\t%s",
+					id, name, targetCommitish, draft, prerelease, createdAt.toISOExtString(), description);
+			else assert(0, "invalid output format");
+		}
+	}
+
+	void processRelease(E)(string key, ref E entry, ref ReleaseInfo release)
+	{
+		switch (key)
+		{
+			case "id":
+				release.id = cast(long)entry.readDouble();
+				break;
+			case "name":
+				release.name = entry.readString();
+				break;
+			case "target_commitish":
+				release.targetCommitish = entry.readString();
+				break;
+			case "draft":
+				release.draft = entry.readBool();
+				break;
+			case "prerelease":
+				release.prerelease = entry.readBool();
+				break;
+			case "body":
+				release.description = entry.readString();
+				break;
+			case "created_at":
+				release.createdAt = SysTime.fromISOExtString(entry.readString());
 				break;
 			default:
 				entry.skipValue();
