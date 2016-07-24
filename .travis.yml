@@ -1,8 +1,8 @@
 language: d
 
 d:
-  - dmd-2.068.0
-  - ldc-0.15.1
+  - dmd-2.071.1
+  - ldc-1.0.0
   - gdc-4.9.2
 
 install:
@@ -21,5 +21,4 @@ sudo: false
 
 matrix:
   exclude:
-    - d: ldc-0.15.1
     - d: gdc-4.9.2
