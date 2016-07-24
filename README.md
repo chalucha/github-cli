@@ -8,7 +8,7 @@ Currently works only with repository stars.
 
 **Status:** Early beta - will change frequently
 
-[![Build Status](https://travis-ci.org/chalucha/github-cli.svg?branch=master)](https://travis-ci.org/chalucha/github-cli)
+[![Build Status](https://travis-ci.org/tchaloupka/github-cli.svg?branch=master)](https://travis-ci.org/tchaloupka/github-cli)
 
 # How to build
 Application can be built using [dub](https://github.com/D-Programming-Language/dub)
