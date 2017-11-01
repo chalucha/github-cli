@@ -4,7 +4,7 @@
 	"copyright": "Copyright © 2015, Tomáš Chaloupka",
 	"authors": ["Tomáš Chaloupka"],
 	"dependencies": {
-		"std_data_json": "~>0.17.0"
+		"std_data_json": "~>0.18.0"
 	},
 	"libs": ["curl"],
 }

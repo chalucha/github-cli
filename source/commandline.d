@@ -716,7 +716,7 @@ final class RepositoryReleasesCommand : CountCommand
 		this.argumentsPattern = "owner/repository";
 		this.description = "Gets repository releases.";
 		this.helpText = [
-			"Gets repository releases."
+			"Gets repository releases." ~ 
 			"This returns a list of releases, which does not include regular Git tags that have not been associated with a release.",
 			"To get a list of Git tags, use the repository tags command."
 		];
